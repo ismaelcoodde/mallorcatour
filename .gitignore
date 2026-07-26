@@ -24,9 +24,8 @@ next-env.d.ts
 !.env.example
 
 # === Archivos pesados que NO deben ir a GitHub ===
-# El vídeo del hero pesa cientos de MB (GitHub rechaza >100MB).
-# Comprímelo a ~3-5 MB y, cuando lo tengas ligero, quita esta línea.
-frontend/public/hero.mp4
+# El hero.mp4 comprimido (~8 MB) SÍ se sube. El master 4K original NO.
+frontend/public/hero-4k-master.mp4
 
 # === Sistema operativo / editor ===
 .DS_Store
