@@ -1,0 +1,10 @@
+# Normaliza los saltos de línea a LF en el repositorio (evita problemas
+# entre Windows y el servidor Linux de despliegue).
+* text=auto eol=lf
+
+# Archivos binarios: no tocar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.ico binary
