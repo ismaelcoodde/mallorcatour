@@ -8,7 +8,8 @@ Pagina web de **alquiler de coches de Amovens**, **alquiler de barcos** y **guia
 - **Alquiler de barcos**: Seccion dedicada al alquiler de embarcaciones en la isla.
 - **Guia de Mallorca**: Contenido orientado a viajeros con recomendaciones, rutas, playas, restaurantes y consejos practicos para visitar Mallorca.
 - **SEO first**: La web esta disenada para posicionar bien en Google en busquedas como "alquiler coches mallorca", "alquiler barcos mallorca", "guia mallorca viajeros".
-- **Cuentas de usuario**: Registro e inicio de sesion con email/contrasena mediante Supabase (Google OAuth pendiente).
+- **Cuentas de usuario**: Registro e inicio de sesion con email/contrasena y con Google (OAuth) mediante Supabase.
+- **En produccion**: Desplegada en https://mallorcatour.es (Coolify + Nixpacks sobre Hetzner).
 
 ## Tech Stack
 
@@ -23,8 +24,11 @@ Pagina web de **alquiler de coches de Amovens**, **alquiler de barcos** y **guia
 - **Uvicorn** - servidor ASGI
 
 ### Autenticacion
-- **Supabase Auth** - registro, login y gestion de sesiones
+- **Supabase Auth** - registro, login (email/contrasena) y login con Google (OAuth)
 - **@supabase/ssr** - integracion de sesiones con el App Router (cookies)
+
+### Despliegue
+- **Coolify** (self-hosted en Hetzner) con **Nixpacks** (Node 22) - build y hosting en `mallorcatour.es`
 
 ## Estructura del proyecto
 
@@ -38,8 +42,9 @@ Pagina web de **alquiler de coches de Amovens**, **alquiler de barcos** y **guia
 │   │   ├── layout.js            # Layout global + metadatos SEO. Lee el usuario y lo pasa al Navbar
 │   │   ├── page.js              # Pagina principal (ruta /)
 │   │   ├── globals.css          # Importacion de Tailwind CSS
-│   │   ├── registro/page.js     # Formulario de registro (supabase.auth.signUp)
-│   │   └── login/page.js        # Formulario de login (signInWithPassword)
+│   │   ├── registro/page.js     # Formulario de registro (signUp + Google OAuth)
+│   │   ├── login/page.js        # Formulario de login (signInWithPassword + Google OAuth)
+│   │   └── auth/callback/route.js # Route Handler: intercambia el code OAuth por sesion
 │   ├── components/
 │   │   └── Navbar.js            # Navegacion responsive + estado de sesion (login/logout)
 │   ├── utils/supabase/
@@ -67,6 +72,7 @@ Next.js usa **enrutado basado en archivos**. Cada carpeta dentro de `app/` con u
 | `app/guia/page.js` | `/guia` |
 | `app/registro/page.js` | `/registro` |
 | `app/login/page.js` | `/login` |
+| `app/auth/callback/route.js` | `/auth/callback` (retorno de Google OAuth) |
 
 Solo hay que crear la carpeta y el archivo `page.js` dentro. No hay que configurar rutas en ningun lado.
 
@@ -101,19 +107,28 @@ SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key-secreta   # solo servidor, aun sin
 
 1. **Registro** (`/registro`): `supabase.auth.signUp({ email, password })` crea el usuario.
 2. **Login** (`/login`): `supabase.auth.signInWithPassword({ email, password })` autentica.
-3. **Sesion**: el `middleware.js` refresca el access token (caduca ~1h) usando el refresh token, de forma transparente.
-4. **Navbar**: el `layout.js` (servidor) lee el usuario con `supabase.auth.getUser()` y se lo pasa al `Navbar`, que ademas escucha cambios en vivo con `onAuthStateChange`.
-5. **Logout**: `supabase.auth.signOut()` desde el Navbar.
+3. **Google OAuth**: `supabase.auth.signInWithOAuth({ provider: "google" })` redirige a Google -> Supabase -> `/auth/callback`, que llama a `exchangeCodeForSession(code)` para crear la sesion.
+4. **Sesion**: el `middleware.js` refresca el access token (caduca ~1h) usando el refresh token, de forma transparente.
+5. **Navbar**: el `layout.js` (servidor) lee el usuario con `supabase.auth.getUser()` y se lo pasa al `Navbar`, que ademas escucha cambios en vivo con `onAuthStateChange`.
+6. **Logout**: `supabase.auth.signOut()` desde el Navbar.
 
 ### Configuracion en el panel de Supabase
 
 - **Authentication -> Providers -> Email**: durante el desarrollo se desactivo **"Confirm email"** para entrar directo al registrarse. **Reactivar antes de produccion.**
+- **Authentication -> Providers -> Google**: activado con el Client ID y Client Secret de Google Cloud Console. El "Callback URL (for OAuth)" de Supabase (`https://<proyecto>.supabase.co/auth/v1/callback`) es el que se registra en Google como *Authorized redirect URI*.
+- **Authentication -> URL Configuration**: `Site URL` = `https://mallorcatour.es`; `Redirect URLs` incluye `https://mallorcatour.es/**`, `https://www.mallorcatour.es/**` y `http://localhost:3000/**` (para desarrollo).
 - Los usuarios registrados aparecen en **Authentication -> Users**.
+
+### Google Cloud Console (OAuth)
+
+- **APIs & Services -> Credentials -> OAuth client ID (Web)**:
+  - *Authorized JavaScript origins*: `http://localhost:3000`, `https://mallorcatour.es`, `https://www.mallorcatour.es`.
+  - *Authorized redirect URIs*: solo el callback de Supabase (`https://<proyecto>.supabase.co/auth/v1/callback`). Google siempre vuelve a Supabase, nunca directamente a la web.
 
 ### Pendiente
 
-- **Google OAuth**: requiere credenciales en Google Cloud Console, configurarlas en Supabase y anadir una ruta de callback (`app/auth/callback/route.js`).
 - **Proteccion de rutas**: restringir paginas a usuarios logueados.
+- **Row Level Security (RLS)**: politicas de acceso a nivel de fila cuando se creen tablas con datos por usuario.
 - **Backend**: que FastAPI verifique el JWT de Supabase en endpoints protegidos.
 
 ## Como funciona la comunicacion Frontend <-> Backend
@@ -161,6 +176,22 @@ npm run dev
 El frontend corre en `http://localhost:3000`
 
 > Nota (Windows CMD): usa `copy .env.example .env.local` en vez de `cp`.
+
+## Despliegue en produccion (Coolify)
+
+La web esta desplegada en **https://mallorcatour.es** con **Coolify** (Nixpacks, Node 22), que hace build desde la rama `main` de GitHub. Un `git push` a `main` dispara (o permite) un nuevo deploy.
+
+### Variables de entorno en Coolify
+
+Como `.env.local` no se sube a GitHub, las claves se configuran en **Coolify -> Environment Variables**:
+
+- `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- **Importante**: marcar **Available at Buildtime** ademas de Runtime. Las variables `NEXT_PUBLIC_*` de Next.js se "hornean" en el momento del build; si no estan disponibles al construir, la app queda sin conexion a Supabase.
+- Tras cambiar variables hay que **Redeploy** (reconstruir).
+
+### Callback OAuth detras del proxy
+
+La app corre en un contenedor (`localhost:3000`) detras del proxy inverso de Coolify. Por eso `app/auth/callback/route.js` **no** usa el `origin` de `request.url` (que seria el interno `localhost:3000`), sino la cabecera **`x-forwarded-host`** para redirigir al host publico real en produccion. En local (`NODE_ENV === "development"`) usa `origin` directamente.
 
 ## Comandos utiles
 
